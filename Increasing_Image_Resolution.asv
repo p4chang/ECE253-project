@@ -1,0 +1,207 @@
+%% Import Dataset
+% import image and preprocess
+sample = imread("testSign.jpg");
+sample = rgb2gray(sample);
+sample = sample (1:end-16,:); %clip 16 pixels to make sure we can cleanly divide by 32 for downsampling
+%create low res version
+downsampling = 32;
+sampleSmol = imresize(sample,1/downsampling);
+
+%% Basic Spectral Interpolation
+sampleUp = spectralUpsample(sampleSmol,32);
+
+%% Cubic B-splines Interpolation
+sampleUpSpline = bspline_upsample(sampleSmol,downsampling);
+
+%% Bilateral soft-decision interpolation (BSAI)
+sampleUpBSAI = BSAI(sampleSmol, downsampling, zeros(1,5));
+ 
+%% Plotting Results
+figure();
+subplot(2,2,1)
+imshow(sampleSmol);
+title('\fontsize{18} 1/32 Scale Sample')
+subplot(2,2,2)
+imshow(sampleUp);
+title(['\fontsize{18} Spectral Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUp))])
+subplot(2,2,3)
+imshow(sampleUpSpline);
+title(['\fontsize{18} B-Spline Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUpSpline))])
+subplot(2,2,4)
+imshow(sampleUpBSAI);
+title(['\fontsize{18} BSAI Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUpBSAI))])
+sgtitle('\fontsize{24} Comparison of Interpolation Techniques for Increasing Image Resolution')
+
+%% Custom Functions
+function sampleUp = spectralUpsample(sample, scale)
+% Upsamples an image by two using simple spectral interpolation. Assumes
+% uint8 grayscale input
+    currScale = 1;
+    while currScale ~= scale
+        %convert to double and capture spectrum of original signal
+        sample = double(sample);
+        sampleF = fft2(sample);   
+        %record sample size and calculate size of new image
+        [Mo, No] = size(sample);
+        Mu = 2*Mo;
+        Nu = 2*No;
+    
+        % zero pad spectrum appropriately using rules in pgs 137-139 of book
+        if mod(No,2) ~= 0
+            sampleUpF = [sampleF(:,1:((No+1)/2)), zeros(Mo,Nu-No), sampleF(:,((No+3)/2):end)];
+        else
+            sampleUpF = [sampleF(:,1:No/2-1), (1/2)*sampleF(:,No/2) , zeros(Mo,Nu-No-1), (1/2)*sampleF(:,No/2), sampleF(:,No/2+1:end)];
+        end
+        if mod(Mo,2) ~= 0
+            sampleUpF = [sampleUpF(1:((Mo+1)/2),:); zeros(Mu-Mo,Nu); sampleUpF(((Mo+3)/2):end,:)];
+        else
+            sampleUpF = [sampleUpF(1:Mo/2-1,:); (1/2)*sampleUpF(Mo/2,:); zeros(Mu-Mo-1,Nu); (1/2)*sampleUpF(Mo/2,:); sampleUpF(Mo/2+1:end,:)];
+        end
+        
+        %scale for lost power
+        sampleUpF = ((Mu*Nu) / (Mo*No)) * sampleUpF;
+        
+        % generate image with IFFT and convert to orignal variable type
+        sampleUp = uint8(real(ifft2(sampleUpF)));
+
+        %increment j and set up next upscale
+        currScale = currScale * 2;
+        sample = sampleUp;
+    end
+
+end
+
+
+function sampleUp = bspline_upsample(img, s)
+% Upsamples an image by two using cubic b-spline interpolation. Assumes
+% uint8 grayscale input
+    
+    %convert to double and capture size
+    img = double(img);
+    [N,M] = size(img);
+    %zero-insert
+    sampleUp = zeros(s*N, s*M);
+    sampleUp(1:s:end, 1:s:end) = img;  
+    %apply cubic b-spline kernel
+    x = -2:1/s:2;
+    ax = abs(x);
+    B = ((ax < 1) .* (4 - 6*ax.^2 + 3*ax.^3) + ...
+         (1 <= ax & ax < 2) .* (2 - ax).^3) / 6;
+    K = B' * B;
+    sampleUp = conv2(sampleUp, K, 'same');
+    %convert back to uint8 before outputing
+    sampleUp = uint8(round(min(max(sampleUp,0),255)));
+
+end
+
+function HR = BSAI(LR, scale, params)
+% BSAI  Bilateral Soft-decision Interpolation
+%   HR = BSAI(LR, scale) upsamples LR by integer factor 'scale' using the
+%   Bilateral Soft-decision Interpolation approach (practical implementation).
+%
+%   HR = BSAI(LR, scale, [A, B, C, D]) allows options:
+%     A   = spatial sigma for bilateral (default: 1.0)
+%     B   = range (intensity) sigma for bilateral (default: 15)
+%     C   = weight t in the paper (default: 0.8)
+%     D   = stabilization constant added to A_k (default: 1e-3)
+
+    %if input parameters are all zeros, default parameters are used
+    if params == zeros(1,5)
+        params = [1, 15, 0.8, 1e-3];
+    end
+    % convert to double for processing
+    I = double(LR);
+    [Lh, Lw, ~] = size(I);
+    % output HR size (simple nearest-integer upscale)
+    Hh = Lh * scale;
+    Hw = Lw * scale;
+    % Prepare HR result
+    HR = zeros(Hh, Hw);
+    % Use MATLAB's imresize to get initial guess (keeps edge structure)
+    initHR = imresize(I, [Hh Hw], 'bilinear');
+    % For each HR pixel: find four surrounding LR samples, compute A_k, U_k, Xk_neigh, then final value
+    lambda = params(3);
+    sigma_s = params(1);
+    sigma_r = params(2);
+    epsU = params(4);
+    % small helper to fetch LR pixel safely
+    get_LR = @(r,c) I(max(1,min(Lh,r)), max(1,min(Lw,c)));
+    
+    % iterate over every pixel
+    cnt = 0;
+    for iH = 1:Hh
+        for jH = 1:Hw
+            cnt = cnt + 1;
+            % Compute continuous LR coordinates (1-based)
+            y = (iH-1)/scale + 1;
+            x = (jH-1)/scale + 1;
+            % If this HR pixel maps exactly to an LR pixel (integer coords), copy directly
+            if abs(y - round(y)) < 1e-12 && abs(x - round(x)) < 1e-12
+                yi = round(y); xi = round(x);
+                HR(iH,jH) = get_LR(yi, xi);
+                continue;
+            end
+            % corner indices (clamped)
+            y0 = floor(y); y1 = ceil(y);
+            x0 = floor(x); x1 = ceil(x);
+            y0 = max(1, min(Lh, y0));
+            y1 = max(1, min(Lh, y1));
+            x0 = max(1, min(Lw, x0));
+            x1 = max(1, min(Lw, x1));
+            % four corner LR samples X_k
+            Xc = [ get_LR(y0,x0);  % top-left
+                get_LR(y0,x1);  % top-right
+                get_LR(y1,x0);  % bottom-left
+                get_LR(y1,x1)]; % bottom-right
+            % spatial distances from HR pos to LR sample positions (in LR pixel units)
+            pts_lr = [y0, x0; y0, x1; y1, x0; y1, x1];
+            dy = pts_lr(:,1) - y;
+            dx = pts_lr(:,2) - x;
+            dist2 = dx.^2 + dy.^2;
+            % initial center estimate: use bilinear initialization
+            centerInit = initHR(iH,jH);
+            % compute photometric difference
+            diff_r = (Xc - centerInit).^2;
+            % compute bilateral weights A_k
+            Ak = exp(-dist2/(2*sigma_s^2)) .* exp(-diff_r/(2*sigma_r^2));
+            % normalize A_k
+            sumAk = sum(Ak);
+            if sumAk > 0
+                Ak = Ak / sumAk;
+            else
+                Ak = ones(4,1)/4;
+            end
+            % U_k stabilization: paper says "added with a constant for stabilization"
+            Uk = Ak + epsU;
+            % X_{k,i} approx: mean of 4-neighbors of each LR corner sample (in LR grid)
+            Xk_neigh = zeros(4,1);
+            for k = 1:4
+                yy = pts_lr(k,1);
+                xx = pts_lr(k,2);
+                % get 4-neighbors in LR (N,S,E,W) clipped at image boundaries
+                neighbors = [ get_LR(yy-1, xx), get_LR(yy+1, xx), ...
+                    get_LR(yy, xx-1), get_LR(yy, xx+1) ];
+                % if neighbor indices outside bounds, get_LR clamps them (replicate)
+                Xk_neigh(k) = mean(neighbors);
+            end
+    
+            % Now implement the closed-form-like expression (interpreting eqn 2.12)
+            % numerator = t * sum_k A_k X_k + sum_k [ U_k * A_k * Xk_neigh ]
+            % denominator = t * sum_k A_k + sum_k [ U_k * A_k ]
+            numer = lambda * sum(Ak .* Xc) + sum( (Uk .* Ak) .* Xk_neigh );
+            denom = lambda * sum(Ak) + sum( (Uk .* Ak) );
+            if denom <= 0
+                outv = centerInit; % fallback
+            else
+                outv = numer / denom;
+            end
+            HR(iH,jH) = outv;
+    
+        end
+    end
+    
+    %convert back to proper format
+    HR = uint8(round(min(max(HR,0),255)));
+
+end
+

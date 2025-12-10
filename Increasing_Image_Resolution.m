@@ -1,161 +1,114 @@
 %% Import Dataset
-% import images
+% import image and preprocess
 sample = imread("testSign.jpg");
 sample = rgb2gray(sample);
+sample = sample (1:end-16,:); %clip 16 pixels to make sure we can cleanly divide by 32 for downsampling
 %create low res version
-sampleSmol = imresize(sample,0.0625);
+downsampling = 32;
+sampleSmol = imresize(sample,1/downsampling);
 
 %% Basic Spectral Interpolation
-sampleUp = upsampleBy2(sampleSmol);
-for i = 1:3
-    sampleUp = upsampleBy2(sampleUp);
-end
+sampleUp = spectralUpsample(sampleSmol,32);
 
-%% Cubic Spline Interpolation
-sampleUpSpline = bspline_resize(sampleSmol,2);
-for i = 1:3
-    sampleUpSpline = bspline_resize(sampleUpSpline,2);
-end
+%% Cubic B-splines Interpolation
+sampleUpSpline = bsplineUpsample(sampleSmol,downsampling);
 
 %% Bilateral soft-decision interpolation (BSAI)
-BSAIparams = [5, 1, 5, 1e-3];
-sampleUpBSAI = BSAI(sampleSmol, 2, BSAIparams);
-for i = 1:3
-    sampleUpBSAI = BSAI(sampleUpBSAI, 2, BSAIparams);
-end
-
+sampleUpBSAI = bsaiUpsample(sampleSmol, downsampling, zeros(1,5));
+ 
 %% Plotting Results
 figure();
-subplot(2,3,1)
-imshow(sample);
-pixels = size(sample);
-title(['\fontsize{18} Orignal ' num2str(pixels(1)) ' by ' num2str(pixels(2)) ' Sample'])
-subplot(2,3,2)
+subplot(2,2,1)
 imshow(sampleSmol);
-pixels = size(sampleSmol);
-title(['\fontsize{18} Low Resolution ' num2str(pixels(1)) ' by ' num2str(pixels(2)) ' Sample'])
-subplot(2,3,3)
+title('\fontsize{18} 1/32 Scale Sample')
+subplot(2,2,2)
 imshow(sampleUp);
 title(['\fontsize{18} Spectral Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUp))])
-subplot(2,3,4)
+subplot(2,2,3)
 imshow(sampleUpSpline);
 title(['\fontsize{18} B-Spline Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUpSpline))])
-subplot(2,3,5:6)
+subplot(2,2,4)
 imshow(sampleUpBSAI);
 title(['\fontsize{18} BSAI Interpolated Reconstruction with MSE ' num2str(mse(sample,sampleUpBSAI))])
 sgtitle('\fontsize{24} Comparison of Interpolation Techniques for Increasing Image Resolution')
 
 %% Custom Functions
-function sampleUp = upsampleBy2(sample)
+function sampleUp = spectralUpsample(sample, scale)
 % Upsamples an image by two using simple spectral interpolation. Assumes
 % uint8 grayscale input
-
-    % capture spectrum of original sample
-    sampleF = fft2(sample);
-
-    %record sample size and calculate size of new image
-    [Mo, No] = size(sample);
-    Mu = 2*Mo;
-    Nu = 2*No;    
-
-    % zero pad spectrum appropriately using rules in pgs 137-139 of book
-    if mod(No,2) ~= 0
-        sampleUpF = [sampleF(:,1:((No+1)/2)), zeros(Mo,Nu-No), sampleF(:,((No+3)/2):end)];
-    else
-        sampleUpF = [sampleF(:,1:No/2-1), (1/2)*sampleF(:,No/2) , zeros(Mo,Nu-No-1), (1/2)*sampleF(:,No/2), sampleF(:,No/2+1:end)];
-    end
-    if mod(Mo,2) ~= 0
-        sampleUpF = [sampleUpF(1:((Mo+1)/2),:); zeros(Mu-Mo,Nu); sampleUpF(((Mo+3)/2):end,:)];
-    else
-        sampleUpF = [sampleUpF(1:Mo/2-1,:); (1/2)*sampleUpF(Mo/2,:); zeros(Mu-Mo-1,Nu); (1/2)*sampleUpF(Mo/2,:); sampleUpF(Mo/2+1:end,:)];
-    end
-
-    %scale for lost power
-    sampleUpF = ((Mu*Nu) / (Mo*No)) * sampleUpF;
-
-    % generate image with IFFT and convert to orignal variable type
-    sampleUp = uint8(real(ifft2(sampleUpF)));
+    currScale = 1;
+    while currScale ~= scale
+        %convert to double and capture spectrum of original signal
+        sample = double(sample);
+        sampleF = fft2(sample);   
+        %record sample size and calculate size of new image
+        [Mo, No] = size(sample);
+        Mu = 2*Mo;
+        Nu = 2*No;
     
-end
-function up = bspline_resize(img, scale)
-    
-    img = double(img);
-    
-    % cubic B-spline 1D kernel sampled at half-pixel
-    x = -2:1/scale:2;
-    B = cubicB(x);
-    K = B' * B;   % 2-D separable
-    
-    % compute B-spline coefficients via recursive filtering
-    C = bsplineCoef(img);
-    
-    % convolve with kernel
-    up = conv2(C, K, 'same');
+        % zero pad spectrum appropriately using rules in pgs 137-139 of book
+        if mod(No,2) ~= 0
+            sampleUpF = [sampleF(:,1:((No+1)/2)), zeros(Mo,Nu-No), sampleF(:,((No+3)/2):end)];
+        else
+            sampleUpF = [sampleF(:,1:No/2-1), (1/2)*sampleF(:,No/2) , zeros(Mo,Nu-No-1), (1/2)*sampleF(:,No/2), sampleF(:,No/2+1:end)];
+        end
+        if mod(Mo,2) ~= 0
+            sampleUpF = [sampleUpF(1:((Mo+1)/2),:); zeros(Mu-Mo,Nu); sampleUpF(((Mo+3)/2):end,:)];
+        else
+            sampleUpF = [sampleUpF(1:Mo/2-1,:); (1/2)*sampleUpF(Mo/2,:); zeros(Mu-Mo-1,Nu); (1/2)*sampleUpF(Mo/2,:); sampleUpF(Mo/2+1:end,:)];
+        end
         
-    up = uint8(round(min(max(up,0),255)));
-    %up = histeq(up);
+        %scale for lost power
+        sampleUpF = ((Mu*Nu) / (Mo*No)) * sampleUpF;
+        
+        % generate image with IFFT and convert to orignal variable type
+        sampleUp = uint8(real(ifft2(sampleUpF)));
+
+        %increment j and set up next upscale
+        currScale = currScale * 2;
+        sample = sampleUp;
     end
-    
-    function y = cubicB(x)
-    ax = abs(x);
-    y = ((ax < 1) .* (4 - 6*ax.^2 + 3*ax.^3) + ...
-         (1 <= ax & ax < 2) .* (2 - ax).^3) / 6;
-    end
-    
-    function C = bsplineCoef(f)
-    % Unser 1993 recursive implementation
-    z = sqrt(3)-2;
-    C = f;
-    
-    % causal pass
-    for j=2:size(f,2)
-        C(:,j) = C(:,j) + z*C(:,j-1);
-    end
-    
-    % anti-causal
-    C(:,end) = z/(1-z^2)*C(:,end);
-    for j=size(f,2)-1:-1:1
-        C(:,j) = z*(C(:,j+1)-C(:,j));
-    end
-    
+
 end
 
 
-% function sampleUp = upsampleBy2BSpline(sample)
-% % Upsamples an image by two using B-Splines. Code was derived from sample
-% % code from pg 150 of textbook
-%     sample = double(sample);
-%     % Cubic spline function samples.
-%     beta=[1/6 2/3 1/6];
-%     beta2=beta'*beta;
-%     % Cubic spline function.
-%     t1=[1:2]/3;
-%     St1=2/3-t1.^2+t1.^3/2;
-%     t2=[3:5]/3;
-%     St2=(2-t2).^3/6;
-%     % 2-D cubic spline.
-%     S=[St1 St2];
-%     S=[fliplr(S) 2/3 S];
-%     S2=S'*S;
-%     % Coefficients C by econvolution
-%     dim = 2*size(sample);
-%     C = real(ifft2(fft2(sample,dim(1),dim(2))./fft2(beta2,dim(1),dim(2))));
-%     spec = conv2(C,S2,'same');
-%     sampleUp = uint8(round(min(max(spec,0),255)));
-%     
-% end
+function sampleUp = bsplineUpsample(img, s)
+% Upsamples an image by two using cubic b-spline interpolation. Assumes
+% uint8 grayscale input
+    
+    %convert to double and capture size
+    img = double(img);
+    [N,M] = size(img);
+    %zero-insert
+    sampleUp = zeros(s*N, s*M);
+    sampleUp(1:s:end, 1:s:end) = img;  
+    %apply cubic b-spline kernel
+    x = -2:1/s:2;
+    ax = abs(x);
+    B = ((ax < 1) .* (4 - 6*ax.^2 + 3*ax.^3) + ...
+         (1 <= ax & ax < 2) .* (2 - ax).^3) / 6;
+    K = B' * B;
+    sampleUp = conv2(sampleUp, K, 'same');
+    %convert back to uint8 before outputing
+    sampleUp = uint8(round(min(max(sampleUp,0),255)));
 
-function HR = BSAI(LR, scale, params)
-    % BSAI  Bilateral Soft-decision Interpolation
-    %   HR = BSAI(LR, scale) upsamples LR by integer factor 'scale' using the
-    %   Bilateral Soft-decision Interpolation approach (practical implementation).
-    %
-    %   HR = BSAI(LR, scale, [A, B, C, D]) allows options:
-    %     A   = spatial sigma for bilateral (default: 1.0)
-    %     B   = range (intensity) sigma for bilateral (default: 15)
-    %     C   = weight t in the paper (default: 0.8)
-    %     D   = stabilization constant added to A_k (default: 1e-3)
+end
 
+function sampleUp = bsaiUpsample(LR, scale, params)
+% BSAI  Bilateral Soft-decision Interpolation
+%   HR = BSAI(LR, scale) upsamples LR by integer factor 'scale' using the
+%   Bilateral Soft-decision Interpolation approach (practical implementation).
+%
+%   HR = BSAI(LR, scale, [A, B, C, D]) allows options:
+%     A   = spatial sigma for bilateral (default: 1.0)
+%     B   = range (intensity) sigma for bilateral (default: 15)
+%     C   = weight t in the paper (default: 0.8)
+%     D   = stabilization constant added to A_k (default: 1e-3)
+
+    %if input parameters are all zeros, default parameters are used
+    if params == zeros(1,5)
+        params = [1, 15, 0.8, 1e-3];
+    end
     % convert to double for processing
     I = double(LR);
     [Lh, Lw, ~] = size(I);
@@ -163,7 +116,7 @@ function HR = BSAI(LR, scale, params)
     Hh = Lh * scale;
     Hw = Lw * scale;
     % Prepare HR result
-    HR = zeros(Hh, Hw);
+    sampleUp = zeros(Hh, Hw);
     % Use MATLAB's imresize to get initial guess (keeps edge structure)
     initHR = imresize(I, [Hh Hw], 'bilinear');
     % For each HR pixel: find four surrounding LR samples, compute A_k, U_k, Xk_neigh, then final value
@@ -173,7 +126,7 @@ function HR = BSAI(LR, scale, params)
     epsU = params(4);
     % small helper to fetch LR pixel safely
     get_LR = @(r,c) I(max(1,min(Lh,r)), max(1,min(Lw,c)));
-
+    
     % iterate over every pixel
     cnt = 0;
     for iH = 1:Hh
@@ -185,7 +138,7 @@ function HR = BSAI(LR, scale, params)
             % If this HR pixel maps exactly to an LR pixel (integer coords), copy directly
             if abs(y - round(y)) < 1e-12 && abs(x - round(x)) < 1e-12
                 yi = round(y); xi = round(x);
-                HR(iH,jH) = get_LR(yi, xi);
+                sampleUp(iH,jH) = get_LR(yi, xi);
                 continue;
             end
             % corner indices (clamped)
@@ -231,7 +184,7 @@ function HR = BSAI(LR, scale, params)
                 % if neighbor indices outside bounds, get_LR clamps them (replicate)
                 Xk_neigh(k) = mean(neighbors);
             end
-
+    
             % Now implement the closed-form-like expression (interpreting eqn 2.12)
             % numerator = t * sum_k A_k X_k + sum_k [ U_k * A_k * Xk_neigh ]
             % denominator = t * sum_k A_k + sum_k [ U_k * A_k ]
@@ -242,13 +195,13 @@ function HR = BSAI(LR, scale, params)
             else
                 outv = numer / denom;
             end
-            HR(iH,jH) = outv;
-
+            sampleUp(iH,jH) = outv;
+    
         end
     end
     
     %convert back to proper format
-    HR = uint8(round(min(max(HR,0),255)));
+    sampleUp = uint8(round(min(max(sampleUp,0),255)));
 
 end
 
