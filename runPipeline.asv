@@ -1,57 +1,267 @@
 %% Run Pipeline
 
-% Suffix for every file must be in this array
-suffixes = [5618, 5619, 5620, 5621, 5622, 5623, 5624, 5625, 5626, 5627,...
-    5632, 5633, 5641, 5642, 5643, 5644, 5645, 5646, 5651, 5653, 5655, 5657,...
-    5658, 5660, 5661, 5663, 5664, 5665, 5666, 5667, 5668, 5669, 5670, 5671, ...
-    5672, 5673, 5674, 5675, 5676, 5677, 5678, 5679, 5680, 5681, 5682, 5683];
+% Define names of single enhancements/pipelines for looping through all of them 
+enhancementCategories = ['small','spectralUpsample','bsplineUpsample','bsaiUpsample','histeq',...
+    'gamma','unsharp','deblur','median','MA','wavelet','chain1','chain2','chain3','chain4','chain5', 'gray'];
 
-% Loop through every data point
-for n = 1:length(suffixes)
-
-    % Import data
-    inputFileName = ['Outputs\small_IMG_', num2str(suffixes(n)),  '.jpg']; % edit this for input filepath
-    enhanced = imread(inputFileName);
-
-    %  Category for filename/posterity
-    enhancementCategory = 'bsaiUpsample';
-
-    % RUN DESIRED ENHANCEMENTS, EDIT THIS FOR DIFFERENT PIPELINES:
-
-        % Convert to grayscale and trim 
-    %enhanced = rgb2gray(enhanced);
-    %enhanced = enhanced (1:end-16,:); 
-
-        % Decrease resolution
-    %enhanced = imresize(enhanced,1/32);
-
-        % Increase resolution - Spectral, B-spline, and BSAI interpolation
-    %enhanced = spectralUpsample(enhanced,32);
-    %enhanced = bsplineUpsample(enhanced,32);
-    %enhanced = bsaiUpsample(enhanced,32,zeros(1,5));
+% Loop through every category
+for j = 1:length(enhancementCategories) 
+    % Loop through every data point
+    for n = 1:346 
         
-        % Increase brightness - Histogram eq, gamma correction
-    %enhanced = histeq(enhanced);
-    %enhanced = gammaCorrect(enhanced);
-
-        % Sharpen image - 
-    %enhanced = imagesharp(enhanced);
-    %enhanced = deblur_psf(enhanced);
-
-        % Denoising image - Median filter, MA filter, and Wavelet denoising
-    %enhanced = medfilt2(enhanced);
-    %enhanced = filter2((1/64)*ones(8,8), enhanced);
-    %enhanced = wdenoise2(enhanced);
-
-    % Output to file
-    outputFileName = ['Outputs\' enhancementCategory, '_IMG_', num2str(suffixes(n)), '.jpg']; % edit this for output filepath
-    imwrite(enhanced,outputFileName);
+        % Establish filename and import data
+        inputFileName = ['Inputs\finalDataset\finalDataset\', num2str(n),  '.jpg']; %  --> online dataset
+        %inputFileName = 'Inputs\IMG_5660.jpg'; % --> temp for reaching around
+        enhanced = im2double(imread(inputFileName));
+        enhanced = rgb2gray(enhanced);
+    
+        %  Category for filename/posterity
+        %enhancementCategory = '__';k
+        dowsampling = 4;
+        
+        if j==1
+            enhancementCategory = 'small';
+            enhanced = enhanced (1:end-16,:); 
+            enhanced = imresize(enhanced,1/dowsampling);
+        elseif j==2
+            %spectral 
+            enhancementCategory = 'spectralUpsampling';
+            enhanced = imresize(enhanced,1/dowsampling);
+            enhanced = spectralUpsample(enhanced,dowsampling);
+        elseif j==3
+            %bspline 
+            enhancementCategory = 'bsplineUpsampling';
+            enhanced = imresize(enhanced,1/dowsampling);
+            enhanced = bsplineUpsample(enhanced,dowsampling);
+        elseif j==4
+            %bsai 
+            enhancementCategory = 'bsaiUpsampling';
+            enhanced = imresize(enhanced,1/dowsampling);
+            enhanced = bsaiUpsample(enhanced,dowsampling,zeros(1,5));
+        elseif j==5
+            %histeq 
+            enhancementCategory = 'histeq';
+            enhanced = histeq(enhanced);
+        elseif j==6
+            %gamma 
+            enhancementCategory = 'gamma';
+            enhanced = gammaCorrect(enhanced);
+        elseif j==7
+            %unsharp
+            enhancementCategory = 'unsharp';
+            enhanced = imagesharp(enhanced);
+        elseif j==8
+            %deblur
+            enhancementCategory = 'deblur';
+            %best_psf = deblur_psf(enhanced);
+            %enhanced = deconvwnr(enhanced, best_psf, 0.005);
+        elseif j==9
+            %median
+            enhancementCategory = 'median';
+            enhanced = medfilt2(enhanced,[5 5]);
+        elseif j==10
+            %MA
+            enhancementCategory = 'MA';
+            enhanced = filter2((1/25)*ones(5,5), enhanced);
+        elseif j==11
+            %wavelet
+            enhancementCategory = 'wavelet';
+            enhanced = wdenoise2(enhanced);
+        elseif j==12
+            %chain1
+            enhancementCategory = 'chain1';
+            enhanced = chain1(enhanced);
+        elseif j==13
+            %chain2
+            enhancementCategory = 'chain2';
+            enhanced = chain2(enhanced);
+        elseif j==14
+            %chain3
+            enhancementCategory = 'chain3';
+            enhanced = chain3(enhanced);
+        elseif j==15
+            %chain4
+            enhancementCategory = 'chain4';
+            enhanced = chain4(enhanced);
+        elseif j==16
+            %chain5
+            enhancementCategory = 'chain5';
+            enhanced = chain5(enhanced);
+        elseif j==17
+            %chain5
+            enhancementCategory = 'grey';
+        end
+    
+        % RUN DESIRED ENHANCEMENTS, EDIT THIS FOR DIFFERENT PIPELINES:
+    
+            %autorun chains
+    %     outputFileName1 = ['Outputs\chain1_IMG_', num2str(suffixes(n)), '.jpg'];
+    %     enhanced1 = chain1(enhanced);
+    %     imwrite(enhanced1,outputFileName1);
+    %     outputFileName1 = ['Outputs\chain2_IMG_', num2str(suffixes(n)), '.jpg'];
+    %     enhanced1 = chain3(enhanced);
+    %     imwrite(enhanced1,outputFileName1);
+    %     outputFileName1 = ['Outputs\chain3_IMG_', num2str(suffixes(n)), '.jpg'];
+    %     enhanced1 = chain3(enhanced);
+    %     imwrite(enhanced1,outputFileName1);
+    
+    
+            % Run Chains
+        %enhanced = chain1(enhanced);
+        %enhanced = chain2(enhanced);
+        %enhanced = chain3(enhanced);
+    
+            % Convert to grayscale and trim 
+        %enhanced = rgb2gray(enhanced);
+        %enhanced = enhanced (1:end-16,:); 
+    
+            % Decrease resolution
+        %enhanced = imresize(enhanced,1/32);
+    
+            % Increase resolution - Spectral, B-spline, and BSAI interpolation
+        %enhanced = spectralUpsample(enhanced,32);
+        %enhanced = bsplineUpsample(enhanced,32);
+        %enhanced = bsaiUpsample(enhanced,32,zeros(1,5));
+            
+            % Increase brightness - Histogram eq, gamma correction
+        %enhanced = histeq(enhanced);
+        %enhanced = gammaCorrect(enhanced);
+    
+            % Sharpen image - Unsharp mask and deblurring
+        %enhanced = imagesharp(enhanced);
+        %best_psf = deblur_psf(enhanced);
+        %enhanced = deconvwnr(enhanced, best_psf, 0.005);
+    
+            % Denoising image - Median filter, MA filter, and Wavelet denoising
+        %enhanced = medfilt2(enhanced,[5 5]);
+        %enhanced = filter2((1/25)*ones(5,5), double(enhanced));
+        %enhanced = wdenoise2(double(enhanced));
+    
+        % Establish filepath/name and output to file
+        outputFileName = ['Outputs\finalPictureSet\' enhancementCategory, '_', num2str(n), '.jpg']; % edit this for output filepath
+        %outputFileName = ['Outputs\' enhancementCategory,'_IMG_5668.jpg'];%manual output 
+        imwrite(enhanced,outputFileName);
+    
+    end
 
 end
+%% Testing execution speed
+%import data and convert to gray
+enhanced = im2double(imread('Inputs\finalDataset\finalDataset\340.jpg'));
+enhanced = rgb2gray(enhanced);
+
+f = @() chain1(enhanced);
+resChain1 = timeit(f);
+
+f = @() chain2(enhanced);
+resChain2 = timeit(f);
+
+f = @() chain3(enhanced);
+resChain3 = timeit(f);
+
+f = @() chain4(enhanced);
+resChain4 = timeit(f);
+
+f = @() chain5(enhanced);
+resChain5 = timeit(f);
+
+f = @() gammaCorrect(enhanced);
+resGamma= timeit(f);
+
+f = @() deconvwnr(enhanced, deblur_psf(enhanced), 0.005);
+resDeblur= timeit(f);
+
+f = @() imagesharp(enhanced);
+resUnsharp= timeit(f);
+
+f = @() histeq(enhanced);
+resHist = timeit(f);
+
+f = @() medfilt2(enhanced,[2 2]);
+resMedian = timeit(f);
+
+f = @() filter2((1/25)*ones(2,2), enhanced);
+resMA = timeit(f);
+
+f = @() wdenoise2(enhanced);
+resWavelet = timeit(f);
+
+f = @() imresize(enhanced,1/4);
+resDown = timeit(f);
+
+enhanced = imresize(enhanced,1/4); %downsample
+
+f = @() bsaiUpsample(enhanced,4,zeros(1,5));
+resBSAI = timeit(f);
+
+f = @() bsplineUpsample(enhanced,4);
+resBspline = timeit(f);
+
+f = @() spectralUpsample(enhanced,4);
+resSpectral = timeit(f);
 
 
 
 %% Enhancement Functions for Pipeline 
+
+function enhanced = chain1(data)
+    %downres to represent poor camera
+    enhanced = imresize(data,1/4);
+    %upres with bspline
+    enhanced = bsplineUpsample(enhanced,4);
+    %increase sharpness
+    enhanced = imagesharp(enhanced);
+    %contrast adjustment with histeq
+    enhanced = histeq(enhanced);
+    %denoise with median
+    enhanced = medfilt2(enhanced,[5 5]);
+end
+
+function enhanced = chain2(data)
+    %downres to represent poor camera
+    enhanced = imresize(data,1/4);
+    %contrast adjustment with histeq
+    enhanced = histeq(enhanced);
+    %upres with bspline
+    enhanced = bsplineUpsample(enhanced,4);
+    %increase sharpness
+    enhanced = imagesharp(enhanced);
+    %denoise with median
+    enhanced = medfilt2(enhanced,[5 5]);
+end
+
+function enhanced = chain3(data)
+    %downres to represent poor camera
+    enhanced = imresize(data,1/4);
+    %increase sharpness
+    enhanced = imagesharp(enhanced);
+    %contrast adjustment with histeq
+    enhanced = histeq(enhanced);
+    %denoise with median
+    enhanced = medfilt2(enhanced,[2 2]);
+    %upres with bspline
+    enhanced = bsplineUpsample(enhanced,4);    
+end
+
+function enhanced = chain4(data)
+    %downres to represent poor camera
+    enhanced = imresize(data,1/4);
+    %upres with bspline
+    enhanced = bsplineUpsample(enhanced,4);
+    %contrast adjustment with histeq
+    enhanced = histeq(enhanced);
+    %denoise with median
+    enhanced = medfilt2(enhanced,[5 5]);
+end
+
+function enhanced = chain5(data)
+    %downres to represent poor camera
+    enhanced = imresize(data,1/4);
+    %contrast adjustment with histeq
+    enhanced = histeq(enhanced);
+    %denoise with median
+    enhanced = medfilt2(enhanced,[2, 2]);  
+end
 
 
 function sampleUp = spectralUpsample(sample, scale)
@@ -83,7 +293,7 @@ function sampleUp = spectralUpsample(sample, scale)
         sampleUpF = ((Mu*Nu) / (Mo*No)) * sampleUpF;
         
         % generate image with IFFT and convert to orignal variable type
-        sampleUp = uint8(real(ifft2(sampleUpF)));
+        sampleUp = real(ifft2(sampleUpF));
 
         %increment j and set up next upscale
         currScale = currScale * 2;
@@ -97,8 +307,7 @@ function sampleUp = bsplineUpsample(img, s)
 % Upsamples an image by two using cubic b-spline interpolation. Assumes
 % uint8 grayscale input
     
-    %convert to double and capture size
-    img = double(img);
+    % capture size
     [N,M] = size(img);
     %zero-insert
     sampleUp = zeros(s*N, s*M);
@@ -110,13 +319,11 @@ function sampleUp = bsplineUpsample(img, s)
          (1 <= ax & ax < 2) .* (2 - ax).^3) / 6;
     K = B' * B;
     sampleUp = conv2(sampleUp, K, 'same');
-    %convert back to uint8 before outputing
-    sampleUp = uint8(round(min(max(sampleUp,0),255)));
 
 end
 
 
-function sampleUp = bsaiUpsample(LR, scale, params)
+function sampleUp = bsaiUpsample(I, scale, params)
 % BSAI  Bilateral Soft-decision Interpolation
 %   HR = BSAI(LR, scale) upsamples LR by integer factor 'scale' using the
 %   Bilateral Soft-decision Interpolation approach (practical implementation).
@@ -131,8 +338,6 @@ function sampleUp = bsaiUpsample(LR, scale, params)
     if params == zeros(1,5)
         params = [1, 15, 0.8, 1e-3];
     end
-    % convert to double for processing
-    I = double(LR);
     [Lh, Lw, ~] = size(I);
     % output HR size (simple nearest-integer upscale)
     Hh = Lh * scale;
@@ -221,9 +426,6 @@ function sampleUp = bsaiUpsample(LR, scale, params)
     
         end
     end
-    
-    %convert back to proper format
-    sampleUp = uint8(round(min(max(sampleUp,0),255)));
 
 end
 
@@ -252,6 +454,8 @@ function score = sharpness_metric(I)
 end
 
 
+
+
 function res = deblur_psf(img)
     %deblur
     psf_len = [5 9 13 17 21 25 29 33 41 51];
@@ -262,7 +466,13 @@ function res = deblur_psf(img)
     for L = psf_len
         for A = psf_ang
             psf = fspecial('motion', L, A);
-            psf = psf / sum(psf(:));
+            psf = psf / sum(psf(:));  
+            if length(psf) > min(size(img)/3)
+                psf = psf(end-floor(min(size(img)/3)):end);
+            end     
+            if psf == zeros(size(psf))
+                psf(1,1) = 1;
+            end
             J = deconvwnr(small, psf, 0.005);
             score = sharpness_metric(J);
             if score > bestS
